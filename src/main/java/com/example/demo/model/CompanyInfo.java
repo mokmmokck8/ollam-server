@@ -2,8 +2,8 @@ package com.example.demo.model;
 
 public class CompanyInfo {
     private String companyName;
-    private String brNumber;
-    private String companyAddress;
+    private String entityIdentifier;
+    private String countryISOCode;
     private String companyType;
 
     // Default constructor
@@ -19,20 +19,20 @@ public class CompanyInfo {
         this.companyName = companyName;
     }
 
-    public String getBrNumber() {
-        return brNumber;
+    public String getEntityIdentifier() {
+        return entityIdentifier;
     }
 
-    public void setBrNumber(String brNumber) {
-        this.brNumber = brNumber;
+    public void setEntityIdentifier(String entityIdentifier) {
+        this.entityIdentifier = entityIdentifier;
     }
 
-    public String getCompanyAddress() {
-        return companyAddress;
+    public String getCountryISOCode() {
+        return countryISOCode;
     }
 
-    public void setCompanyAddress(String companyAddress) {
-        this.companyAddress = companyAddress;
+    public void setCountryISOCode(String countryISOCode) {
+        this.countryISOCode = countryISOCode;
     }
 
     public String getCompanyType() {

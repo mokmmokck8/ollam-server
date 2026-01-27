@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.demo.model.CompanyInfo;
 import java.util.Base64;
 import java.util.Map;
-import java.util.List;
 import java.util.HashMap;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -31,11 +30,18 @@ public class AiExtractService {
         );
 
         String rawJson = (String) response.getBody().get("response");
+        
+        System.out.println("Raw AI response: " + rawJson);
 
         try {
-            return objectMapper.readValue(rawJson, CompanyInfo.class);
+            // Clean up the response to extract JSON
+            String cleanedJson = cleanJsonResponse(rawJson);
+            System.out.println("Cleaned JSON: " + cleanedJson);
+            
+            return objectMapper.readValue(cleanedJson, CompanyInfo.class);
         } catch (Exception e) {
-            throw new RuntimeException("AI response parsing failed", e);
+            System.err.println("Failed to parse AI response: " + rawJson);
+            throw new RuntimeException("AI response parsing failed: " + e.getMessage(), e);
         }
     }
 
@@ -74,21 +80,61 @@ public class AiExtractService {
             
             System.out.println("Extracted response text: " + responseText);
             
-            // Clean up markdown formatting (remove backticks and json markers)
-            responseText = responseText.replaceAll("```json\\s*", "")
-                                       .replaceAll("```\\s*", "")
-                                       .trim();
+            // Clean up the response to extract JSON
+            String cleanedJson = cleanJsonResponse(responseText);
             
-            System.out.println("Cleaned response text: " + responseText);
+            System.out.println("Cleaned response text: " + cleanedJson);
+            
+            // Check if responseText is empty or not valid JSON
+            if (cleanedJson.isEmpty()) {
+                throw new RuntimeException("Empty response from AI model");
+            }
             
             // Now parse the actual JSON data
-            JsonNode dataNode = mapper.readTree(responseText);
-            
-            return mapper.treeToValue(dataNode, CompanyInfo.class);
+            return mapper.readValue(cleanedJson, CompanyInfo.class);
         } catch (Exception e) {
             System.err.println("Error parsing Ollama response: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Failed to parse AI response", e);
         }
+    }
+    
+    /**
+     * Cleans the AI response to extract valid JSON.
+     * Handles various formats like:
+     * - Plain JSON
+     * - JSON wrapped in markdown code blocks (```json ... ```)
+     * - JSON preceded by explanatory text (e.g., "Here is the JSON: {...}")
+     */
+    private String cleanJsonResponse(String response) {
+        if (response == null || response.isEmpty()) {
+            return "";
+        }
+        
+        // Remove markdown code blocks
+        String cleaned = response.replaceAll("```json\\s*", "")
+                                 .replaceAll("```\\s*", "")
+                                 .trim();
+        
+        // Try to find JSON object in the response
+        // Look for the first { and last }
+        int firstBrace = cleaned.indexOf('{');
+        int lastBrace = cleaned.lastIndexOf('}');
+        
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+        }
+        
+        // Try to find JSON array in the response if no object found
+        if (!cleaned.startsWith("{")) {
+            int firstBracket = cleaned.indexOf('[');
+            int lastBracket = cleaned.lastIndexOf(']');
+            
+            if (firstBracket >= 0 && lastBracket > firstBracket) {
+                cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+            }
+        }
+        
+        return cleaned.trim();
     }
 }

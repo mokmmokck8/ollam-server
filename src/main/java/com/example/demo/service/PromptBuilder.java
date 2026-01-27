@@ -11,8 +11,18 @@ public class PromptBuilder {
 
         Extract the following fields from the image:
         - companyName: The name of the company
-        - brNumber: The business registration number
-        - companyAddress: If the document mentions a company address, extract it and return ONLY the ISO 3166-1 alpha-3 country code (3-letter code). For example: HKG for Hong Kong, USA for United States, GBR for United Kingdom, CHN for China, etc.
+        - entityIdentifier: The company's unique identification number. Look for any of the following:
+          * Business Registration Number (BR Number)
+          * Tax ID Number (TIN)
+          * Unified Social Credit Code (USCC) - used in China (统一社会信用代码)
+          * Corporate Number - used in Japan (法人番号)
+          * Unique Entity Number (UEN) - used in Singapore
+          * Company Registration Number (CRN)
+          * VAT Number
+          * Employer Identification Number (EIN)
+          * Any similar official company identification number
+          Extract only the number itself, without any prefix labels or explanations.
+        - countryISOCode: If the document mentions a company address, extract it and return ONLY the ISO 3166-1 alpha-3 country code. This MUST be exactly 3 uppercase letters. For example: HKG for Hong Kong, USA for United States, GBR for United Kingdom, CHN for China, SGP for Singapore, JPN for Japan, etc. Do not return the full address, city name, or any other format - only the 3-letter country code.
         - companyType: The type of the company. If the document mentions any of the following company types (or similar terms), output the corresponding value:
           * PRIVATE_COMPANY_LIMITED_BY_SHARES (e.g., "private limited", "私人有限公司")
           * PUBLIC_COMPANY_LIMITED_BY_SHARES (e.g., "public limited", "公眾有限公司")
@@ -28,16 +38,19 @@ public class PromptBuilder {
           * SOLE_PROPRIETORSHIP (e.g., "sole proprietor", "獨資")
           * If none of the above match, return "OTHERS"
 
-        Rules:
-        - Return ONLY valid JSON
+        CRITICAL RULES:
+        - Return ONLY valid JSON - NO explanations, NO introductory text, NO markdown formatting
+        - Do NOT start your response with phrases like "Here is", "The JSON is", etc.
+        - Do NOT wrap the JSON in code blocks or backticks
+        - Start your response directly with { and end with }
         - If a field is missing, return null
-        - No explanation or additional text
+        - Your entire response must be parseable as JSON
 
         Example:
         {
           "companyName": "ACME TECHNOLOGY LIMITED",
-          "brNumber": "12345678",
-          "companyAddress": "HKG",
+          "entityIdentifier": "12345678",
+          "countryISOCode": "HKG",
           "companyType": "PRIVATE_COMPANY_LIMITED_BY_SHARES"
         }
         """;
@@ -49,8 +62,18 @@ public class PromptBuilder {
 
         Extract the following fields from the document:
         - companyName: The name of the company
-        - brNumber: The business registration number
-        - companyAddress: If the document mentions a company address, extract it and return ONLY the ISO 3166-1 alpha-3 country code (3-letter code). For example: HKG for Hong Kong, USA for United States, GBR for United Kingdom, CHN for China, etc.
+        - entityIdentifier: The company's unique identification number. Look for any of the following:
+          * Business Registration Number (BR Number)
+          * Tax ID Number (TIN)
+          * Unified Social Credit Code (USCC) - used in China (统一社会信用代码)
+          * Corporate Number - used in Japan (法人番号)
+          * Unique Entity Number (UEN) - used in Singapore
+          * Company Registration Number (CRN)
+          * VAT Number
+          * Employer Identification Number (EIN)
+          * Any similar official company identification number
+          Extract only the number itself, without any prefix labels or explanations.
+        - countryISOCode: If the document mentions a company address, extract it and return ONLY the ISO 3166-1 alpha-3 country code. This MUST be exactly 3 uppercase letters. For example: HKG for Hong Kong, USA for United States, GBR for United Kingdom, CHN for China, SGP for Singapore, JPN for Japan, etc. Do not return the full address, city name, or any other format - only the 3-letter country code.
         - companyType: The type of the company. If the document mentions any of the following company types (or similar terms), output the corresponding value:
           * PRIVATE_COMPANY_LIMITED_BY_SHARES (e.g., "private limited", "私人有限公司")
           * PUBLIC_COMPANY_LIMITED_BY_SHARES (e.g., "public limited", "公眾有限公司")
@@ -66,16 +89,19 @@ public class PromptBuilder {
           * SOLE_PROPRIETORSHIP (e.g., "sole proprietor", "獨資")
           * If none of the above match, return "OTHERS"
 
-        Rules:
-        - Return ONLY valid JSON
+        CRITICAL RULES:
+        - Return ONLY valid JSON - NO explanations, NO introductory text, NO markdown formatting
+        - Do NOT start your response with phrases like "Here is", "The JSON is", etc.
+        - Do NOT wrap the JSON in code blocks or backticks
+        - Start your response directly with { and end with }
         - If a field is missing, return null
-        - No explanation or additional text
+        - Your entire response must be parseable as JSON
 
         Example:
         {
           "companyName": "ACME TECHNOLOGY LIMITED",
-          "brNumber": "12345678",
-          "companyAddress": "HKG",
+          "entityIdentifier": "12345678",
+          "countryISOCode": "HKG",
           "companyType": "PRIVATE_COMPANY_LIMITED_BY_SHARES"
         }
 
