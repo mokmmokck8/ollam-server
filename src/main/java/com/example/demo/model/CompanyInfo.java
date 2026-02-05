@@ -1,5 +1,11 @@
 package com.example.demo.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+/**
+ * Simplified CompanyInfo model matching the prompt definition
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CompanyInfo {
     private String companyName;
     private String entityIdentifier;
@@ -10,7 +16,15 @@ public class CompanyInfo {
     public CompanyInfo() {
     }
 
-    // Getters and setters
+    // Constructor with all fields
+    public CompanyInfo(String companyName, String entityIdentifier, String countryISOCode, String companyType) {
+        this.companyName = companyName;
+        this.entityIdentifier = entityIdentifier;
+        this.countryISOCode = countryISOCode;
+        this.companyType = companyType;
+    }
+
+    // Getters and Setters
     public String getCompanyName() {
         return companyName;
     }
@@ -41,5 +55,15 @@ public class CompanyInfo {
 
     public void setCompanyType(String companyType) {
         this.companyType = companyType;
+    }
+
+    @Override
+    public String toString() {
+        return "CompanyInfo{" +
+                "companyName='" + companyName + '\'' +
+                ", entityIdentifier='" + entityIdentifier + '\'' +
+                ", countryISOCode='" + countryISOCode + '\'' +
+                ", companyType='" + companyType + '\'' +
+                '}';
     }
 }
