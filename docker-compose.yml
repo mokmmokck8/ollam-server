@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  # PaddleOCR 服務
+  paddleocr:
+    build:
+      context: .
+      dockerfile: Dockerfile.paddleocr
+    container_name: paddleocr-service
+    ports:
+      - "8866:8866"
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Ollama 服務（需要先在本機安裝 Ollama）
+  # 注意：Ollama 通常在本機運行，這裡使用 host 網路模式
+  # 如果你想在 Docker 中運行 Ollama，可以參考官方文件
+
+networks:
+  app-network:
+    driver: bridge

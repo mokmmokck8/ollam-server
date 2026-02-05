@@ -12,15 +12,18 @@ public class DocumentUploadController {
     private final PdfParseService pdfParseService;
     private final AiExtractService aiExtractService;
     private final PromptBuilder promptBuilder;
+    private final OcrService ocrService;
 
     public DocumentUploadController(
         PdfParseService pdfParseService,
         AiExtractService aiExtractService,
-        PromptBuilder promptBuilder
+        PromptBuilder promptBuilder,
+        OcrService ocrService
     ) {
         this.pdfParseService = pdfParseService;
         this.aiExtractService = aiExtractService;
         this.promptBuilder = promptBuilder;
+        this.ocrService = ocrService;
     }
 
     @PostMapping("/upload")
@@ -31,12 +34,18 @@ public class DocumentUploadController {
             throw new IllegalArgumentException("Unable to determine file type");
         }
         
-        // Handle image files with Ollama vision model
+        // Handle image files with OCR + Llama (two-step process)
         if (contentType.startsWith("image/")) {
             try {
+                // Step 1: Use PaddleOCR to extract text from image
                 byte[] imageData = file.getBytes();
-                String prompt = promptBuilder.buildForVision();
-                return aiExtractService.extractFromImage(prompt, imageData);
+                String extractedText = ocrService.extractTextFromImage(imageData, file.getOriginalFilename());
+                
+                System.out.println("OCR extracted text, now processing with Llama...");
+                
+                // Step 2: Use Llama to analyze the extracted text
+                String prompt = promptBuilder.build(extractedText);
+                return aiExtractService.extract(prompt);
             } catch (Exception e) {
                 throw new RuntimeException("Failed to process image file", e);
             }

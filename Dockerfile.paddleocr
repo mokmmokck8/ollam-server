@@ -1,0 +1,33 @@
+FROM python:3.9-slim
+
+# 安裝系統相依套件
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgcc-s1 \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 設定工作目錄
+WORKDIR /app
+
+# 安裝 Python 套件
+RUN pip install --no-cache-dir \
+    paddlepaddle==3.2.2 \
+    paddleocr \
+    flask \
+    pillow \
+    numpy
+
+# 複製服務程式
+COPY start_paddleocr_service.py /app/start_paddleocr_service.py
+
+# 暴露服務埠號
+EXPOSE 8866
+
+# 啟動服務
+CMD ["python", "start_paddleocr_service.py"]

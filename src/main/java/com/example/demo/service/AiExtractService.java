@@ -3,7 +3,9 @@ package com.example.demo.service;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.example.demo.model.CompanyInfo;
 import java.util.Base64;
 import java.util.Map;
@@ -13,8 +15,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 @Service
 public class AiExtractService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
+
+    public AiExtractService() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(60000);
+        factory.setReadTimeout(60000);
+        this.restTemplate = new RestTemplate(factory);
+
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper.configure(DeserializationFeature.ACCEPT_EMPTY_ARRAY_AS_NULL_OBJECT, true);
+        this.objectMapper.configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
+    }
 
     public CompanyInfo extract(String prompt) {
         Map<String, Object> request = Map.of(
@@ -23,18 +37,22 @@ public class AiExtractService {
             "stream", false
         );
 
+        @SuppressWarnings("rawtypes")
         ResponseEntity<Map> response = restTemplate.postForEntity(
             "http://localhost:11434/api/generate",
             request,
             Map.class
         );
 
-        String rawJson = (String) response.getBody().get("response");
+        Map<?, ?> body = response.getBody();
+        if (body == null) {
+            throw new RuntimeException("Empty response from AI service");
+        }
+        String rawJson = (String) body.get("response");
         
         System.out.println("Raw AI response: " + rawJson);
 
         try {
-            // Clean up the response to extract JSON
             String cleanedJson = cleanJsonResponse(rawJson);
             System.out.println("Cleaned JSON: " + cleanedJson);
             
@@ -134,6 +152,10 @@ public class AiExtractService {
                 cleaned = cleaned.substring(firstBracket, lastBracket + 1);
             }
         }
+        
+        // Fix common JSON issues: convert empty arrays to null for string fields
+        // This handles cases where AI returns "remarks": [] instead of "remarks": null
+        cleaned = cleaned.replaceAll("\"remarks\"\\s*:\\s*\\[\\s*\\]", "\"remarks\": null");
         
         return cleaned.trim();
     }
