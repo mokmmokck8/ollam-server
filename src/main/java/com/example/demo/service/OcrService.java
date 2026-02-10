@@ -40,6 +40,8 @@ public class OcrService {
                 throw new IllegalArgumentException("Image data is empty");
             }
             
+            System.out.println("Processing image: " + filename + " (size: " + imageData.length + " bytes)");
+            
             // 准备请求头
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
@@ -58,7 +60,7 @@ public class OcrService {
 
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
-            System.out.println("Calling PaddleOCR service...");
+            System.out.println("Calling PaddleOCR service at: " + PADDLEOCR_URL);
             
             // 调用 PaddleOCR API
             ResponseEntity<String> response = restTemplate.postForEntity(
@@ -68,13 +70,34 @@ public class OcrService {
             );
 
             String responseBody = response.getBody();
-            System.out.println("PaddleOCR response: " + responseBody);
+            System.out.println("PaddleOCR response status: " + response.getStatusCode());
+            System.out.println("PaddleOCR response body: " + responseBody);
+
+            // 检查响应是否包含错误
+            if (responseBody != null && responseBody.contains("\"error\"")) {
+                JsonNode errorNode = objectMapper.readTree(responseBody);
+                String errorMessage = errorNode.path("error").asText();
+                String errorDetails = errorNode.path("details").asText("");
+                System.err.println("PaddleOCR service returned error: " + errorMessage);
+                if (!errorDetails.isEmpty()) {
+                    System.err.println("Error details: " + errorDetails);
+                }
+                throw new RuntimeException("PaddleOCR service error: " + errorMessage);
+            }
 
             // 解析 OCR 结果
             return parseOcrResponse(responseBody);
             
+        } catch (org.springframework.web.client.HttpServerErrorException e) {
+            System.err.println("PaddleOCR service error (HTTP " + e.getStatusCode() + "): " + e.getResponseBodyAsString());
+            throw new RuntimeException("PaddleOCR service encountered an error. Please check if the image is valid and the service is running properly.", e);
+        } catch (org.springframework.web.client.ResourceAccessException e) {
+            System.err.println("Cannot connect to PaddleOCR service: " + e.getMessage());
+            throw new RuntimeException("Cannot connect to PaddleOCR service at " + PADDLEOCR_URL + ". Please ensure the service is running.", e);
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            System.err.println("PaddleOCR extraction failed: " + e.getMessage());
+            System.err.println("Unexpected error during OCR extraction: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Failed to extract text using PaddleOCR", e);
         }
@@ -89,10 +112,13 @@ public class OcrService {
             JsonNode resultsNode = rootNode.path("results");
 
             if (resultsNode.isMissingNode() || !resultsNode.isArray()) {
-                throw new RuntimeException("Invalid OCR response format");
+                System.err.println("Invalid OCR response format - missing or invalid 'results' field");
+                System.err.println("Response was: " + jsonResponse);
+                throw new RuntimeException("Invalid OCR response format: missing 'results' field");
             }
 
             StringBuilder extractedText = new StringBuilder();
+            int totalTextBlocks = 0;
 
             // 遍历所有图片的结果（通常只有一张）
             for (JsonNode imageResult : resultsNode) {
@@ -102,24 +128,43 @@ public class OcrService {
                     // 遍历所有识别的文本行
                     for (JsonNode textBlock : dataNode) {
                         String text = textBlock.path("text").asText();
+                        double confidence = textBlock.path("confidence").asDouble(0.0);
+                        
                         if (!text.isEmpty()) {
                             extractedText.append(text).append("\n");
+                            totalTextBlocks++;
+                            System.out.println("Extracted text line (confidence: " + 
+                                String.format("%.2f", confidence) + "): " + text);
                         }
                     }
                 }
             }
 
             String result = extractedText.toString().trim();
-            System.out.println("Extracted text from OCR:\n" + result);
             
             if (result.isEmpty()) {
-                throw new RuntimeException("No text extracted from image");
+                System.err.println("No text was extracted from the image. The image might be:");
+                System.err.println("  - Empty or blank");
+                System.err.println("  - Contains no recognizable text");
+                System.err.println("  - In an unsupported format or corrupted");
+                System.err.println("  - Too low quality for OCR recognition");
+                throw new RuntimeException("No text could be extracted from the image. Please ensure the image contains readable text.");
             }
+
+            System.out.println("Successfully extracted " + totalTextBlocks + " text blocks from OCR");
+            System.out.println("Total extracted text length: " + result.length() + " characters");
 
             return result;
             
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            System.err.println("Error parsing OCR JSON response: " + e.getMessage());
+            System.err.println("Response was: " + jsonResponse);
+            throw new RuntimeException("Failed to parse OCR response JSON", e);
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            System.err.println("Error parsing OCR response: " + e.getMessage());
+            System.err.println("Unexpected error parsing OCR response: " + e.getMessage());
+            e.printStackTrace();
             throw new RuntimeException("Failed to parse OCR response", e);
         }
     }
