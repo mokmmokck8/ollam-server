@@ -6,6 +6,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -13,18 +14,25 @@ import org.springframework.core.io.ByteArrayResource;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.net.SocketException;
+import java.net.ConnectException;
+
 @Service
 public class OcrService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private static final String PADDLEOCR_URL = "http://localhost:8866/predict/ocr_system";
+    private static final int CONNECT_TIMEOUT_MS = 60_000;
+    private static final int READ_TIMEOUT_MS = 180_000;
+    private static final int MAX_RETRIES = 3;
+    private static final long RETRY_BASE_DELAY_MS = 2_000;
 
     public OcrService() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(60000);
-        factory.setReadTimeout(60000);
-        this.restTemplate = new RestTemplate(factory);
+    factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
+    factory.setReadTimeout(READ_TIMEOUT_MS);
+    this.restTemplate = new RestTemplate(new BufferingClientHttpRequestFactory(factory));
         this.objectMapper = new ObjectMapper();
     }
 
@@ -35,72 +43,114 @@ public class OcrService {
      * @return 提取的文字内容
      */
     public String extractTextFromImage(byte[] imageData, String filename) {
-        try {
-            if (imageData == null || imageData.length == 0) {
-                throw new IllegalArgumentException("Image data is empty");
-            }
-            
-            System.out.println("Processing image: " + filename + " (size: " + imageData.length + " bytes)");
-            
-            // 准备请求头
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-
-            // 准备文件数据
-            ByteArrayResource fileResource = new ByteArrayResource(imageData) {
-                @Override
-                public String getFilename() {
-                    return filename;
-                }
-            };
-
-            // 构建 multipart 请求
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("images", fileResource);
-
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-
-            System.out.println("Calling PaddleOCR service at: " + PADDLEOCR_URL);
-            
-            // 调用 PaddleOCR API
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                PADDLEOCR_URL,
-                requestEntity,
-                String.class
-            );
-
-            String responseBody = response.getBody();
-            System.out.println("PaddleOCR response status: " + response.getStatusCode());
-            System.out.println("PaddleOCR response body: " + responseBody);
-
-            // 检查响应是否包含错误
-            if (responseBody != null && responseBody.contains("\"error\"")) {
-                JsonNode errorNode = objectMapper.readTree(responseBody);
-                String errorMessage = errorNode.path("error").asText();
-                String errorDetails = errorNode.path("details").asText("");
-                System.err.println("PaddleOCR service returned error: " + errorMessage);
-                if (!errorDetails.isEmpty()) {
-                    System.err.println("Error details: " + errorDetails);
-                }
-                throw new RuntimeException("PaddleOCR service error: " + errorMessage);
-            }
-
-            // 解析 OCR 结果
-            return parseOcrResponse(responseBody);
-            
-        } catch (org.springframework.web.client.HttpServerErrorException e) {
-            System.err.println("PaddleOCR service error (HTTP " + e.getStatusCode() + "): " + e.getResponseBodyAsString());
-            throw new RuntimeException("PaddleOCR service encountered an error. Please check if the image is valid and the service is running properly.", e);
-        } catch (org.springframework.web.client.ResourceAccessException e) {
-            System.err.println("Cannot connect to PaddleOCR service: " + e.getMessage());
-            throw new RuntimeException("Cannot connect to PaddleOCR service at " + PADDLEOCR_URL + ". Please ensure the service is running.", e);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            System.err.println("Unexpected error during OCR extraction: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Failed to extract text using PaddleOCR", e);
+        if (imageData == null || imageData.length == 0) {
+            throw new IllegalArgumentException("Image data is empty");
         }
+
+        System.out.println("Processing image: " + filename + " (size: " + imageData.length + " bytes)");
+
+        // 准备请求头
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        // 准备文件数据 – create the resource once; it is stateless and reusable.
+        ByteArrayResource fileResource = new ByteArrayResource(imageData) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        };
+
+        // 构建 multipart 请求
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("images", fileResource);
+
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        org.springframework.web.client.ResourceAccessException lastAccessException = null;
+
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                System.out.println("Calling PaddleOCR service at: " + PADDLEOCR_URL
+                        + (attempt > 1 ? " (attempt " + attempt + "/" + MAX_RETRIES + ")" : ""));
+
+                // 调用 PaddleOCR API
+                ResponseEntity<String> response = restTemplate.postForEntity(
+                        PADDLEOCR_URL,
+                        requestEntity,
+                        String.class
+                );
+
+                String responseBody = response.getBody();
+                System.out.println("PaddleOCR response status: " + response.getStatusCode());
+                System.out.println("PaddleOCR response body: " + responseBody);
+
+                // 检查响应是否包含错误
+                if (responseBody != null && responseBody.contains("\"error\"")) {
+                    JsonNode errorNode = objectMapper.readTree(responseBody);
+                    String errorMessage = errorNode.path("error").asText();
+                    String errorDetails = errorNode.path("details").asText("");
+                    System.err.println("PaddleOCR service returned error: " + errorMessage);
+                    if (!errorDetails.isEmpty()) {
+                        System.err.println("Error details: " + errorDetails);
+                    }
+                    throw new RuntimeException("PaddleOCR service error: " + errorMessage);
+                }
+
+                // 解析 OCR 结果
+                return parseOcrResponse(responseBody);
+
+            } catch (org.springframework.web.client.HttpServerErrorException e) {
+                System.err.println("PaddleOCR service error (HTTP " + e.getStatusCode() + "): " + e.getResponseBodyAsString());
+                throw new RuntimeException("PaddleOCR service encountered an error. Please check if the image is valid and the service is running properly.", e);
+
+            } catch (org.springframework.web.client.ResourceAccessException e) {
+                Throwable root = e.getMostSpecificCause();
+                boolean isTransient = (root instanceof SocketException)
+                        || (root instanceof ConnectException)
+                        || (root instanceof java.net.SocketTimeoutException);
+
+                if (isTransient) {
+                    lastAccessException = e;
+                    System.err.println("PaddleOCR transient connection error (attempt " + attempt + "/" + MAX_RETRIES + "): " + root.getMessage());
+                    if (attempt < MAX_RETRIES) {
+                        long delay = RETRY_BASE_DELAY_MS * (1L << (attempt - 1)); // exponential: 2s, 4s, 8s
+                        System.out.println("Retrying in " + delay + " ms...");
+                        try {
+                            Thread.sleep(delay);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException("OCR retry interrupted", ie);
+                        }
+                        continue;
+                    }
+                    // All retries exhausted
+                    System.err.println("All " + MAX_RETRIES + " PaddleOCR attempts failed.");
+                    throw new RuntimeException(
+                            "Cannot connect to PaddleOCR service at " + PADDLEOCR_URL + " after " + MAX_RETRIES + " attempts. "
+                                    + "Cause: " + root.getMessage() + ". "
+                                    + "Ensure the PaddleOCR service is running and reachable.",
+                            e
+                    );
+                }
+                // Non-transient I/O error – fail immediately
+                System.err.println("Cannot connect to PaddleOCR service: " + e.getMessage());
+                throw new RuntimeException(
+                        "Cannot connect to PaddleOCR service at " + PADDLEOCR_URL + ". " + e.getMessage(), e);
+
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                System.err.println("Unexpected error during OCR extraction: " + e.getMessage());
+                e.printStackTrace();
+                throw new RuntimeException("Failed to extract text using PaddleOCR", e);
+            }
+        }
+
+        // Should be unreachable, but keep compiler happy
+        throw new RuntimeException(
+                "Cannot connect to PaddleOCR service after " + MAX_RETRIES + " attempts.",
+                lastAccessException);
     }
 
     /**

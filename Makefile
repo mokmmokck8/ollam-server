@@ -1,7 +1,14 @@
-.PHONY: help build start stop restart logs test clean all
+.PHONY: help build start stop restart logs test clean all up down
 
 # 預設目標
 help:
+
+# One-command start/stop for PaddleOCR + Ollama + Spring Boot
+up:
+	@./scripts/start-all.sh
+
+down:
+	@./scripts/stop-all.sh
 	@echo "📚 可用指令："
 	@echo "  make build    - 建構 Docker 映像檔"
 	@echo "  make start    - 啟動服務"

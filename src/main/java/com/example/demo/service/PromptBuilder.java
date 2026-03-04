@@ -4,7 +4,6 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class PromptBuilder {
-
     public String build(String documentText) {
         String basePrompt = """
         You are an information extraction assistant analyzing a document %s.
@@ -64,15 +63,39 @@ public class PromptBuilder {
         - Do NOT start your response with phrases like "Here is", "The JSON is", etc.
         - Do NOT wrap the JSON in code blocks or backticks
         - Start your response directly with { and end with }
+        - Output exactly ONE JSON object (not an array)
+        - Ensure the JSON is COMPLETE (include the final closing brace })
+        - Do not include trailing commas
         - If a field is missing, return null
         - Your entire response must be parseable as JSON
 
-        Example:
+        OUTPUT SCHEMA (MUST FOLLOW EXACTLY):
+        - Your JSON object MUST contain EXACTLY these 4 keys and no others:
+          1) companyName
+          2) entityIdentifier
+          3) countryISOCode
+          4) companyType
+        - Do NOT add any other keys (for example: Members, Remarks, Address, Company Records, Other Information, etc.)
+        - Key names MUST match exactly as listed (case-sensitive)
+
+        RETRY RULE:
+        If your previous response was NOT a valid JSON object OR contained ANY extra keys beyond the 4 keys above, you MUST retry ONCE and respond with ONLY a valid JSON object that matches the schema exactly.
+
+        Valid JSON Response Example:
         {
           "companyName": "ACME TECHNOLOGY LIMITED",
           "entityIdentifier": "12345678",
           "countryISOCode": "HKG",
           "companyType": "PRIVATE_COMPANY_LIMITED_BY_SHARES"
+        }
+
+  Please return a Valid JSON Response for me, as the example above. No explanations, no introductory text, no markdown formatting.
+  You need to make sure you return this format (exactly 4 keys, no others):
+        {
+          "companyName": <extract from your document>,
+          "entityIdentifier": <extract from your document>,
+          "countryISOCode": <extract from your document>,
+          "companyType": <extract from your document>
         }
         %s
         """;

@@ -4,7 +4,7 @@ PaddleOCR 服務啟動腳本
 使用 PaddleOCR 提供 HTTP API 服務
 
 安裝依賴:
-pip install paddlepaddle paddleocr flask pillow numpy
+pip install paddlepaddle paddleocr flask pillow numpy gunicorn
 
 運行:
 python start_paddleocr_service.py
@@ -19,9 +19,11 @@ import io
 app = Flask(__name__)
 
 # 初始化 PaddleOCR
-# use_angle_cls=True 表示使用方向分類器
-# lang='ch' 表示中文，也支援英文（'en'）和其他語言
-ocr = PaddleOCR(use_angle_cls=True, lang='ch')
+# - use_textline_orientation replaces deprecated use_angle_cls
+# - ocr_version='PP-OCRv4' uses the mobile/CPU-stable models instead of the
+#   heavy server models (PP-OCRv5_server_*) that segfault in CPU-only Docker.
+# - lang='ch' supports both Chinese and English text
+ocr = PaddleOCR(use_textline_orientation=True, lang='ch', ocr_version='PP-OCRv4')
 
 @app.route('/predict/ocr_system', methods=['POST'])
 def ocr_predict():
@@ -55,8 +57,8 @@ def ocr_predict():
         
         print(f"Processing image with shape: {img_array.shape}")
         
-        # 執行 OCR (不傳遞 cls 參數，使用初始化時的 use_angle_cls 設定)
-        result = ocr.ocr(img_array)
+        # 執行 OCR – use predict() (ocr() is deprecated and triggers warnings)
+        result = ocr.predict(img_array)
         
         print(f"OCR result type: {type(result)}")
         print(f"OCR result length: {len(result) if result else 0}")
@@ -170,6 +172,33 @@ def health_check():
     return jsonify({'status': 'healthy'})
 
 if __name__ == '__main__':
-    print("Starting PaddleOCR service on http://localhost:8866")
+    import multiprocessing
+    import gunicorn.app.base
+
+    workers = max(2, multiprocessing.cpu_count())
+    print(f"Starting PaddleOCR service on http://localhost:8866 with {workers} gunicorn workers")
     print("Endpoint: POST http://localhost:8866/predict/ocr_system")
-    app.run(host='0.0.0.0', port=8866, debug=False)
+
+    class StandaloneApplication(gunicorn.app.base.BaseApplication):
+        def __init__(self, application, options=None):
+            self.options = options or {}
+            self.application = application
+            super().__init__()
+
+        def load_config(self):
+            for key, value in self.options.items():
+                if key in self.cfg.settings and value is not None:
+                    self.cfg.set(key.lower(), value)
+
+        def load(self):
+            return self.application
+
+    options = {
+        'bind': '0.0.0.0:8866',
+        'workers': workers,
+        'worker_class': 'sync',
+        'timeout': 300,          # 5 min per request – OCR on large pages can be slow
+        'keepalive': 5,
+        'preload_app': True,     # load the model once, share across workers
+    }
+    StandaloneApplication(app, options).run()
